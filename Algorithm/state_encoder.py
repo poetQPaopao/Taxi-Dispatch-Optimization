@@ -1,15 +1,8 @@
 # state_encoder.py
 class StateEncoder:
-    def __init__(self, num_zones, max_orders=5, wait_buckets=[0, 5, 10, float('inf')]):
+    def __init__(self, num_zones, max_orders=5):
         self.num_zones = num_zones
         self.max_orders = max_orders
-        self.wait_buckets = wait_buckets  # e.g., [0,5,10,inf] -> bucket index 0,1,2
-
-    def _bucket_wait_time(self, wait_time):
-        for i, bound in enumerate(self.wait_buckets[:-1]):
-            if wait_time < bound:
-                return i
-        return len(self.wait_buckets) - 1  # last bucket
 
     def encode(self, raw_state):
         """
@@ -29,7 +22,6 @@ class StateEncoder:
         current_time = raw_state['current_time']
         for order in orders:
             wait_time = current_time - order['created_time']
-            wait_bucket = self._bucket_wait_time(wait_time)
             order_features.append(order['pickup'])   # pickup zone
             order_features.append(wait_time)       # waiting bucket
         # Pad if fewer orders than max_orders
