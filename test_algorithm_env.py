@@ -29,7 +29,7 @@ def _adapt_observation(obs, grid_size):
 		adapted["taxis"].append(
 			{
 				"id": taxi["id"],
-				"location": _flatten_loc(taxi["loc"], grid_size),
+				"location": _flatten_loc(taxi["location"], grid_size),
 				"is_free": taxi["is_free"],
 			}
 		)
@@ -37,7 +37,7 @@ def _adapt_observation(obs, grid_size):
 		adapted["orders"].append(
 			{
 				"id": order["id"],
-				"pickup": _flatten_loc(order["start"], grid_size),
+				"pickup": _flatten_loc(order["pickup"], grid_size),
 				"created_time": order["created_time"],
 			}
 		)
@@ -85,7 +85,7 @@ def run_integration_test(
 			if action is None:
 				action = (0, num_orders)
 
-			obs, reward, done = env.step(action)
+			obs, reward, done, illegal = env.step(action)
 			total_reward += reward
 			next_adapted = _adapt_observation(obs, env.grid_size)
 			agent.step(next_adapted, reward, done)

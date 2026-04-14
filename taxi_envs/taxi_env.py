@@ -6,7 +6,7 @@ from typing import Tuple, Dict, List, Any
 class Taxi:
     def __init__(self, id, loc):
         self.id = id
-        self.loc = loc
+        self.location = loc
         self.is_free = True
         self.dest = None
         self.dispatched_order = None
@@ -92,7 +92,7 @@ class TaxiDispatchEnv(gym.Env):
         for taxi in self.taxis:
             obs['taxis'].append({
                 'id': taxi.id,
-                'location': taxi.loc,      # key 'location'
+                'location': taxi.location,      # key 'location'
                 'is_free': taxi.is_free
             })
         # Only include unfinished orders
@@ -112,10 +112,13 @@ class TaxiDispatchEnv(gym.Env):
             return None
         return (taxi_id, pending_order_ids[slot])
 
-    def step(self, action: int) -> Tuple[Dict, float, bool, Dict]:
+    def step(self, action: int | Tuple[int, int]) -> Tuple[Dict, float, bool, Dict]:
         # Get current pending order IDs
         pending_ids = [o['id'] for o in self._get_observation()['orders']]
-        pair = self._action_to_pair(action, pending_ids)
+        if isinstance(action, tuple):
+            pair = action
+        else:
+            pair = self._action_to_pair(action, pending_ids)
         if pair is None:
             return self._get_observation(), -1.0, False, {"illegal": True}
 
@@ -135,7 +138,7 @@ class TaxiDispatchEnv(gym.Env):
             return self._get_observation(), -1.0, False, {"illegal": True}
 
         # Simulate trip
-        start_pos = taxi.loc
+        start_pos = taxi.location
         pickup_pos = order.start
         dropoff_pos = order.end
 
@@ -171,7 +174,7 @@ class TaxiDispatchEnv(gym.Env):
                 x, y = order.start
                 grid[x][y] = "O"
         for taxi in self.taxis:
-            x, y = taxi.loc
+            x, y = taxi.location
             grid[x][y] = "T"
         print("\n".join(" ".join(row) for row in grid))
 
