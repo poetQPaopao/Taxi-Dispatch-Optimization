@@ -27,4 +27,4 @@ export EPSILON=0.2
 # =========================
 # run
 # =========================
-python -m test_main.py
+python  test_main.py

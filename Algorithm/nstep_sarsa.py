@@ -1,7 +1,11 @@
 from collections import deque
 import random
-from q_table import QTable
-from epsilon_greedy import epsilon_greedy
+if __package__:
+    from .q_table import QTable
+    from .epsilon_greedy import epsilon_greedy
+else:
+    from q_table import QTable
+    from epsilon_greedy import epsilon_greedy
 
 
 class NStepSarsaAgent:
