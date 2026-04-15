@@ -5,6 +5,7 @@ from typing import List, Tuple
 import numpy as np
 
 from .taxi_env import TaxiDispatchEnv
+from .graph_taxi_env import GraphTaxiDispatchEnv
 
 
 def make_env(
@@ -14,6 +15,32 @@ def make_env(
 	seed: int | None = None,
 ) -> TaxiDispatchEnv:
 	env = TaxiDispatchEnv(num_taxis=num_taxis, grid_size=grid_size, max_steps=max_steps)
+	if seed is not None:
+		np.random.seed(seed)
+	return env
+
+
+def make_graph_env(
+	num_taxis: int = 5,
+	max_orders: int = 10,
+	max_steps: int = 200,
+	seed: int | None = None,
+	center_coords: tuple[float, float] = (22.7952, 113.5583),
+	view_radius: int = 3000,
+	network_type: str = "all",
+	meters_per_step: float = 50.0,
+	cache_path: str | None = None,
+) -> GraphTaxiDispatchEnv:
+	env = GraphTaxiDispatchEnv(
+		num_taxis=num_taxis,
+		max_orders=max_orders,
+		max_steps=max_steps,
+		center_coords=center_coords,
+		view_radius=view_radius,
+		network_type=network_type,
+		meters_per_step=meters_per_step,
+		cache_path=cache_path,
+	)
 	if seed is not None:
 		np.random.seed(seed)
 	return env
