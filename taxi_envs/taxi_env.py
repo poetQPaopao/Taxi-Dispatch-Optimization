@@ -1,182 +1,217 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-from typing import Tuple, Dict, List, Any
+from typing import Dict, List, Tuple
+
 
 class Taxi:
-    def __init__(self, id, loc):
-        self.id = id
-        self.location = loc
+    def __init__(self, zone_id: int):
+        self.zone_id = zone_id
         self.is_free = True
-        self.dest = None
-        self.dispatched_order = None
 
-    def _move_towards(self, current, target):
-        x, y = current
-        tx, ty = target
-        if x < tx:
-            x += 1
-        elif x > tx:
-            x -= 1
-        if y < ty:
-            y += 1
-        elif y > ty:
-            y -= 1
-        return [x, y]
 
 class Order:
-    def __init__(self, id, start, end):
-        self.id = id
-        self.start = start
-        self.end = end
-        self.created_time = 0
-        self.picked_up = False
-        self.finished = False
+    def __init__(self, origin: int, dest: int, fare: float, time_generated: int):
+        self.origin = origin
+        self.dest = dest
+        self.fare = fare
+        self.time_generated = time_generated
+    
+    def __repr__(self):
+        return f"Order(to:{self.dest}, fare:{self.fare:.1f})"
+
 
 class TaxiDispatchEnv(gym.Env):
-    def __init__(self, num_taxis=5, grid_size=10, max_orders=10, max_steps=200):
+    def __init__(self, config: Dict | None = None):
         super().__init__()
-        self.num_taxis = num_taxis
-        self.grid_size = grid_size
-        self.max_orders = max_orders
-        self.max_steps = max_steps
-        self.current_step = 0
+        cfg = config or {}
 
-        # Action space: discrete index = taxi_id * max_orders + order_slot
-        self.action_space = spaces.Discrete(num_taxis * max_orders)
+        def _get(name: str, default):
+            if isinstance(cfg, dict) and name in cfg:
+                return cfg[name]
+            if hasattr(cfg, name):
+                return getattr(cfg, name)
+            return default
 
-        # Observation space: dictionary (to match state_encoder)
-        self.observation_space = spaces.Dict({
-            'taxis': spaces.Sequence(spaces.Dict({
-                'id': spaces.Discrete(num_taxis),
-                'location': spaces.Box(low=0, high=grid_size-1, shape=(2,), dtype=int),
-                'is_free': spaces.Discrete(2)
-            })),
-            'orders': spaces.Sequence(spaces.Dict({
-                'id': spaces.Discrete(max_orders),
-                'pickup': spaces.Box(low=0, high=grid_size-1, shape=(2,), dtype=int),
-                'created_time': spaces.Discrete(max_steps)
-            })),
-            'current_time': spaces.Discrete(max_steps)
-        })
+        self.n_zones = int(_get("N_zones", _get("num_zones", 25)))
+        self.episode_length = int(_get("episode_length", 96))
+        self.cost_empty = float(_get("cost_empty", 1.0))
+        self.cost_occupied = float(_get("cost_occupied", 0.5))
+        self.base_fare = float(_get("base_fare", 5.0))
+        self.rate_per_step = float(_get("rate_per_step", 1.0))
 
-        self.taxis = []
-        self.orders = []
-        self.reset()
+        demand_matrix = _get("demand_matrix", None)
+        destination_distribution = _get("destination_distribution", None)
+        travel_time_matrix = _get("travel_time_matrix", None)
 
-    def _init_state(self):
-        self.taxis = [
-            Taxi(i, [np.random.randint(0, self.grid_size), np.random.randint(0, self.grid_size)])
-            for i in range(self.num_taxis)
-        ]
-        self.orders = [
-            Order(i,
-                  [np.random.randint(0, self.grid_size), np.random.randint(0, self.grid_size)],
-                  [np.random.randint(0, self.grid_size), np.random.randint(0, self.grid_size)])
-            for i in range(self.max_orders)
-        ]
+        self.demand_matrix = self._init_demand_matrix(demand_matrix)
+        self.destination_distribution = self._init_destination_distribution(
+            destination_distribution
+        )
+        self.travel_time_matrix = self._init_travel_time_matrix(travel_time_matrix)
 
-    def reset(self, seed=None, options=None):
+        self._action_space = spaces.Discrete(self.n_zones)
+        self._observation_space = spaces.Tuple(
+            (spaces.Discrete(self.n_zones), spaces.Discrete(self.episode_length))
+        )
+
+        self.rng = np.random.default_rng()
+        self.current_zone = 0
+        self.current_time = 0
+        self.pending_orders: List[List[Order]] = [[] for _ in range(self.n_zones)]
+        self.total_orders = 0
+        self.completed_orders = 0
+
+    @property
+    def observation_space(self):
+        return self._observation_space
+
+    @property
+    def action_space(self):
+        return self._action_space
+
+
+    def reset(self, seed: int | None = None, options: Dict | None = None):
+        # Gymnasium reset returns (obs, info).
+        super().reset(seed=seed)
         if seed is not None:
-            np.random.seed(seed)
-        self.current_step = 0
-        self._init_state()
-        return self._get_observation()
+            self.rng = np.random.default_rng(seed)
+        self.current_time = 0
+        self.current_zone = int(self.rng.integers(0, self.n_zones))
+        self.total_orders = 0
+        self.completed_orders = 0
+        self._generate_orders_for_time(self.current_time)
+        
+        return self._get_state(), {}
 
-    def _get_observation(self) -> Dict[str, Any]:
-        obs = {
-            'taxis': [],
-            'orders': [],
-            'current_time': self.current_step
-        }
-        for taxi in self.taxis:
-            obs['taxis'].append({
-                'id': taxi.id,
-                'location': taxi.location,      # key 'location'
-                'is_free': taxi.is_free
-            })
-        # Only include unfinished orders
-        for order in self.orders:
-            if not order.finished:
-                obs['orders'].append({
-                    'id': order.id,
-                    'pickup': order.start, # key 'pickup'
-                    'created_time': order.created_time
-                })
-        return obs
+    def step(self, action: int) -> Tuple[Tuple[int, int], float, bool, bool, Dict]:
+        if not isinstance(action, (int, np.integer)):
+            raise ValueError("action must be an int target_zone")
+        if action < 0 or action >= self.n_zones:
+            return self._get_state(), -1.0, False, False, {"illegal": True}
 
-    def _action_to_pair(self, action_int: int, pending_order_ids: List[int]) -> Tuple[int, int] | None:
-        taxi_id = action_int // self.max_orders
-        slot = action_int % self.max_orders
-        if slot >= len(pending_order_ids):
-            return None
-        return (taxi_id, pending_order_ids[slot])
+        target_zone = int(action)
 
-    def step(self, action: int | Tuple[int, int]) -> Tuple[Dict, float, bool, Dict]:
-        # Get current pending order IDs
-        pending_ids = [o['id'] for o in self._get_observation()['orders']]
-        if isinstance(action, tuple):
-            pair = action
+        travel_time = int(self.travel_time_matrix[self.current_zone, target_zone])
+        if target_zone == self.current_zone:
+            # Waiting should advance time but not incur empty-move cost.
+            travel_time = max(1, travel_time)
+            move_reward = 0.0
         else:
-            pair = self._action_to_pair(action, pending_ids)
-        if pair is None:
-            return self._get_observation(), -1.0, False, {"illegal": True}
+            move_reward = -self.cost_empty * travel_time
 
-        taxi_id, order_id = pair
-        self.current_step += 1
+        next_time = self.current_time + travel_time
+        time_elapsed = travel_time
 
-        # Validate
-        if taxi_id >= self.num_taxis:
-            return self._get_observation(), -1.0, False, {"illegal": True}
-        taxi = self.taxis[taxi_id]
-        order = next((o for o in self.orders if o.id == order_id and not o.finished), None)
-        if order is None:
-            return self._get_observation(), -1.0, False, {"illegal": True}
-        if not taxi.is_free:
-            return self._get_observation(), -1.0, False, {"illegal": True}
-        if order.picked_up or order.finished:
-            return self._get_observation(), -1.0, False, {"illegal": True}
+        # Stop if we would cross the episode horizon.
+        if next_time >= self.episode_length:
+            remaining = self.episode_length - self.current_time
+            self.current_zone = target_zone
+            self.current_time = self.episode_length - 1
+            return self._get_state(), move_reward, False, True, {"time_elapsed": remaining}
 
-        # Simulate trip
-        start_pos = taxi.location
-        pickup_pos = order.start
-        dropoff_pos = order.end
+        # Advance to the repositioned zone and generate orders for the new time.
+        self.current_zone = target_zone
+        self.current_time = next_time
+        self._generate_orders_for_time(self.current_time)
 
-        time_to_pickup = manhattan_distance(start_pos, pickup_pos)
-        trip_distance = manhattan_distance(pickup_pos, dropoff_pos)
-        total_travel_time = time_to_pickup + trip_distance
+        matched_order = self._match_order(self.current_zone, self.current_time)
+        
+        # No match: only movement reward applies.
+        if matched_order is None:
+            return self._get_state(), move_reward, False, False, {"matched": False, "time_elapsed": time_elapsed}
 
-        pickup_time = self.current_step + time_to_pickup
-        waiting_time = pickup_time - order.created_time
+        # Matched: check whether the trip fits in the remaining horizon.
+        trip_time = int(self.travel_time_matrix[self.current_zone, matched_order.dest])
+        arrival_time = self.current_time + trip_time
+        if arrival_time >= self.episode_length:
+            remaining = self.episode_length - self.current_time
+            self.current_time = self.episode_length - 1
+            return self._get_state(), move_reward, False, True, {
+                "matched": True,
+                "trip_blocked": True,
+                "time_elapsed": remaining,
+            }
 
-        self.current_step += total_travel_time
+        time_elapsed += trip_time
 
-        # Reward: scale down to keep values reasonable
-        reward = 20 - (waiting_time + trip_distance) / 10
+        trip_reward = matched_order.fare - self.cost_occupied * trip_time
+        self.completed_orders += 1
+        self.current_zone = matched_order.dest
+        total_reward = move_reward + trip_reward
 
-        taxi.loc = dropoff_pos
-        taxi.is_free = True
-        taxi.dispatched_order = None
+        # Normal arrival: generate orders for the new time step.
+        self.current_time = arrival_time
+        self._generate_orders_for_time(self.current_time)
+        
+        return self._get_state(), total_reward, False, False, {"matched": True, "time_elapsed": time_elapsed}
+    
+    def render(self, mode: str = "human") -> None:
+        if mode != "human":
+            return
+        pending = [len(orders) for orders in self.pending_orders]
+        print(
+            f"time={self.current_time} zone={self.current_zone} "
+            f"pending_orders={pending}"
+        )
 
-        order.picked_up = True
-        order.finished = True
+    def _get_state(self) -> Tuple[int, int]:
+        return self.current_zone, self.current_time
 
-        done = all(o.finished for o in self.orders)
-        if self.current_step >= self.max_steps:
-            done = True
+    def _init_demand_matrix(self, demand_matrix):
+        if demand_matrix is None:
+            return np.full((self.n_zones, self.episode_length), 0.5, dtype=float)
+        return np.asarray(demand_matrix, dtype=float)
 
-        return self._get_observation(), reward, done, {"travel_time": total_travel_time}
+    def _init_destination_distribution(self, destination_distribution):
+        if destination_distribution is None:
+            dist = np.full(
+                (self.n_zones, self.episode_length, self.n_zones),
+                1.0 / self.n_zones,
+                dtype=float,
+            )
+            return dist
+        dist = np.asarray(destination_distribution, dtype=float)
+        totals = dist.sum(axis=-1, keepdims=True)
+        totals[totals == 0.0] = 1.0
+        return dist / totals
 
-    def render(self):
-        grid = [["." for _ in range(self.grid_size)] for _ in range(self.grid_size)]
-        for order in self.orders:
-            if not order.finished:
-                x, y = order.start
-                grid[x][y] = "O"
-        for taxi in self.taxis:
-            x, y = taxi.location
-            grid[x][y] = "T"
-        print("\n".join(" ".join(row) for row in grid))
+    def _init_travel_time_matrix(self, travel_time_matrix):
+        if travel_time_matrix is not None:
+            return np.asarray(travel_time_matrix, dtype=int)
 
-def manhattan_distance(p1, p2):
-    return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+        grid_size = int(round(self.n_zones ** 0.5))
+        if grid_size * grid_size == self.n_zones:
+            coords = [(i // grid_size, i % grid_size) for i in range(self.n_zones)]
+            matrix = np.zeros((self.n_zones, self.n_zones), dtype=int)
+            for i, (x1, y1) in enumerate(coords):
+                for j, (x2, y2) in enumerate(coords):
+                    matrix[i, j] = abs(x1 - x2) + abs(y1 - y2)
+            return matrix
+
+        matrix = np.ones((self.n_zones, self.n_zones), dtype=int)
+        np.fill_diagonal(matrix, 0)
+        return matrix
+
+    def _generate_orders_for_time(self, time_step: int) -> None:
+        self.pending_orders = [[] for _ in range(self.n_zones)]
+        for zone in range(self.n_zones):
+            lam = float(self.demand_matrix[zone, time_step])
+            if lam <= 0.0:
+                continue
+            count = int(self.rng.poisson(lam))
+            if count <= 0:
+                continue
+            self.total_orders += count
+            probs = self.destination_distribution[zone, time_step]
+            for _ in range(count):
+                dest = int(self.rng.choice(self.n_zones, p=probs))
+                trip_time = int(self.travel_time_matrix[zone, dest])
+                fare = self.base_fare + self.rate_per_step * trip_time
+                self.pending_orders[zone].append(Order(zone, dest, fare, time_step))
+
+    def _match_order(self, zone: int, time_step: int) -> Order | None:
+        orders = self.pending_orders[zone]
+        if not orders:
+            return None
+        return orders[int(self.rng.integers(0, len(orders)))]

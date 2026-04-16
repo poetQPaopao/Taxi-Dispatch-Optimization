@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import Dict, List
 
 import numpy as np
 
@@ -9,14 +9,29 @@ from .graph_taxi_env import GraphTaxiDispatchEnv
 
 
 def make_env(
-	num_taxis: int = 5,
-	grid_size: int = 10,
-	max_steps: int = 200,
+	config: Dict | None = None,
+	num_taxis: int = 1,
+	grid_size: int = 5,
+	max_steps: int = 96,
 	seed: int | None = None,
 ) -> TaxiDispatchEnv:
-	env = TaxiDispatchEnv(num_taxis=num_taxis, grid_size=grid_size, max_steps=max_steps)
+	_ = num_taxis
+	if config is None:
+		n_zones = grid_size * grid_size
+		config = {
+			"N_zones": n_zones,
+			"episode_length": max_steps,
+			"demand_matrix": np.full((n_zones, max_steps), 0.5, dtype=float),
+			"destination_distribution": np.full(
+				(n_zones, max_steps, n_zones),
+				1.0 / n_zones,
+				dtype=float,
+			),
+			"travel_time_matrix": _build_travel_time_matrix(n_zones, grid_size),
+		}
+	env = TaxiDispatchEnv(config=config)
 	if seed is not None:
-		np.random.seed(seed)
+		env.reset(seed=seed)
 	return env
 
 
@@ -46,42 +61,38 @@ def make_graph_env(
 	return env
 
 
-def list_valid_dispatches(env: TaxiDispatchEnv) -> List[Tuple[int, int]]:
-	valid: List[Tuple[int, int]] = []
-	for taxi in env.taxis:
-		if not taxi.is_free:
-			continue
-		for order in env.orders:
-			if order.picked_up or order.finished:
-				continue
-			if order.created_time > 0:
-				continue
-			valid.append((taxi.id, order.id))
-	return valid
+def list_valid_dispatches(env: TaxiDispatchEnv) -> List[int]:
+	return list(range(env.action_space.n))
 
 
-def sample_dispatch(env: TaxiDispatchEnv, rng: np.random.Generator | None = None) -> Tuple[int, int]:
+def sample_dispatch(env: TaxiDispatchEnv, rng: np.random.Generator | None = None) -> int:
 	candidates = list_valid_dispatches(env)
 	if not candidates:
-		return 0, 0
+		return 0
 	if rng is None:
 		rng = np.random.default_rng()
 	return candidates[int(rng.integers(0, len(candidates)))]
 
 
 def build_grid_observation(env: TaxiDispatchEnv) -> np.ndarray:
-	grid = np.zeros((3, env.grid_size, env.grid_size), dtype=np.float32)
-
-	for taxi in env.taxis:
-		x, y = taxi.loc
-		grid[0, x, y] = 1.0
-
-	for order in env.orders:
-		if order.picked_up or order.finished:
-			continue
-		sx, sy = order.start
-		grid[1, sx, sy] = 1.0
-		waiting_time = max(0, env.current_step - order.created_time)
-		grid[2, sx, sy] = float(min(255, waiting_time))
-
+	grid_size = int(round(env.n_zones ** 0.5))
+	if grid_size * grid_size != env.n_zones:
+		raise ValueError("n_zones must be a perfect square for grid visualization")
+	grid = np.zeros((1, grid_size, grid_size), dtype=np.float32)
+	x = env.current_zone // grid_size
+	y = env.current_zone % grid_size
+	grid[0, x, y] = 1.0
 	return grid
+
+
+def _build_travel_time_matrix(n_zones: int, grid_size: int) -> np.ndarray:
+	if grid_size * grid_size != n_zones:
+		matrix = np.ones((n_zones, n_zones), dtype=int)
+		np.fill_diagonal(matrix, 0)
+		return matrix
+	coords = [(i // grid_size, i % grid_size) for i in range(n_zones)]
+	matrix = np.zeros((n_zones, n_zones), dtype=int)
+	for i, (x1, y1) in enumerate(coords):
+		for j, (x2, y2) in enumerate(coords):
+			matrix[i, j] = abs(x1 - x2) + abs(y1 - y2)
+	return matrix
