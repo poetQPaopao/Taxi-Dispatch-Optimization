@@ -36,9 +36,10 @@ def make_env(
 
 
 def make_graph_env(
-	num_taxis: int = 5,
-	max_orders: int = 10,
-	max_steps: int = 200,
+	config: Dict | None = None,
+	num_taxis: int = 1,
+	max_orders: int = 1,
+	max_steps: int = 96,
 	seed: int | None = None,
 	center_coords: tuple[float, float] = (22.7952, 113.5583),
 	view_radius: int = 3000,
@@ -47,6 +48,7 @@ def make_graph_env(
 	cache_path: str | None = None,
 ) -> GraphTaxiDispatchEnv:
 	env = GraphTaxiDispatchEnv(
+		config=config,
 		num_taxis=num_taxis,
 		max_orders=max_orders,
 		max_steps=max_steps,
@@ -57,7 +59,7 @@ def make_graph_env(
 		cache_path=cache_path,
 	)
 	if seed is not None:
-		np.random.seed(seed)
+		env.reset(seed=seed)
 	return env
 
 
