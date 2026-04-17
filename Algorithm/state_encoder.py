@@ -1,32 +1,30 @@
 # state_encoder.py
-class StateEncoder:
-    def __init__(self, num_zones, max_orders=5):
-        self.num_zones = num_zones
-        self.max_orders = max_orders
+# Encodes the raw environment state into a hashable tuple for the Q‑table.
 
-    def encode(self, raw_state):
+class StateEncoder:
+    """
+    Encodes a raw state dictionary (zone, current_time) into a tuple (zone, time).
+    The state space size is num_zones * max_time_steps.
+    """
+    def __init__(self, num_zones: int, max_time_steps: int):
         """
-        raw_state: dict with 'taxis', 'orders', 'current_time'
-        returns tuple of ints
+        Args:
+            num_zones: number of zones (e.g., 25 for a 5x5 grid)
+            max_time_steps: maximum time steps in an episode (e.g., 96)
         """
-        # 1. Taxi info: for each taxi (id, location, is_free)
-        taxi_features = []
-        for taxi in raw_state['taxis']:
-            taxi_features.append(taxi['location'])          # zone id (0..num_zones-1)
-            taxi_features.append(1 if taxi['is_free'] else 0)
-            
-        # 2. Orders: sort by creation time (oldest first), take first max_orders
-        orders = sorted(raw_state['orders'], key=lambda o: o['created_time'])
-        orders = orders[:self.max_orders]
-        order_features = []
-        current_time = raw_state['current_time']
-        for order in orders:
-            wait_time = current_time - order['created_time']
-            order_features.append(order['pickup'])   # pickup zone
-            order_features.append(wait_time)       # waiting bucket
-        # Pad if fewer orders than max_orders
-        while len(order_features) < self.max_orders * 2:
-            order_features.append(-1)  # sentinel for no order
-        # Combine all into tuple
-        state_tuple = tuple(taxi_features + order_features)
-        return state_tuple
+        self.num_zones = num_zones
+        self.max_time_steps = max_time_steps
+
+    def encode(self, raw_state: dict) -> tuple:
+        """
+        Convert raw_state dictionary into a tuple (zone, current_time).
+
+        Args:
+            raw_state: dict with keys 'zone' (int) and 'current_time' (int)
+
+        Returns:
+            tuple of two ints: (zone, current_time)
+        """
+        zone = raw_state['zone']
+        time = raw_state['current_time']
+        return (zone, time)
