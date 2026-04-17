@@ -1,6 +1,6 @@
 # nstep_sarsa.py
-# n‑step SARSA agent for a single‑taxi repositioning problem.
-# State = (zone, time), Action = target zone (0 … num_zones-1).
+# n‑step SARSA agent for SMDP (Semi‑Markov Decision Process).
+# Each transition has a duration (real time or steps) which affects discounting.
 
 from collections import deque
 import random
@@ -9,9 +9,9 @@ from epsilon_greedy import epsilon_greedy
 
 class NStepSarsaAgent:
     """
-    n‑step SARSA agent with epsilon‑greedy exploration.
+    n‑step SARSA agent for SMDP with epsilon‑greedy exploration.
     Uses a Q‑table (dictionary) to store state‑action values.
-    State is encoded as a tuple (zone, time); action is an integer (target zone).
+    Memory stores (state_tuple, action, reward, duration) for the last n steps.
     """
 
     def __init__(self, state_encoder, num_actions: int,
@@ -21,10 +21,10 @@ class NStepSarsaAgent:
         """
         Args:
             state_encoder: object with encode(raw_state) -> tuple (hashable)
-            num_actions: number of possible actions (equals number of zones)
+            num_actions: number of possible actions
             n: number of steps to look ahead (n‑step return)
-            alpha: learning rate (step size)
-            gamma: discount factor
+            alpha: learning rate
+            gamma: discount factor (applied to cumulative duration)
             epsilon: initial exploration probability
             epsilon_min: minimum epsilon after decay
             epsilon_decay: multiplicative decay factor per episode
@@ -38,14 +38,9 @@ class NStepSarsaAgent:
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
 
-        # Q‑table stores values for (state_tuple, action)
         self.q_table = QTable()
-
-        # Memory buffer for the current episode:
-        # stores (state_tuple, action, reward) for the last n steps.
+        # Memory stores (state, action, reward, duration)
         self.memory = deque(maxlen=n)
-
-        # Internal state for the current step
         self.last_state = None
         self.last_action = None
 
@@ -54,55 +49,39 @@ class NStepSarsaAgent:
     # ----------------------------------------------------------------------
 
     def act(self, raw_state, epsilon_override=None):
-        """
-        Choose an action (integer target zone) using epsilon‑greedy.
-
-        Args:
-            raw_state: raw environment state (dictionary with 'zone', 'current_time')
-            epsilon_override: if provided, use this epsilon instead of self.epsilon
-
-        Returns:
-            integer action (0 … num_actions-1)
-        """
+        """Choose an action using epsilon‑greedy."""
         state_tuple = self.state_encoder.encode(raw_state)
         eps = epsilon_override if epsilon_override is not None else self.epsilon
         action, _ = epsilon_greedy(state_tuple, self.q_table, eps, self.num_actions)
         return action
 
     def start_episode(self, raw_state):
-        """
-        Call this at the beginning of each episode.
-        Resets memory, encodes the initial state, and chooses the first action.
-
-        Args:
-            raw_state: initial raw state from env.reset()
-        """
+        """Call at the beginning of each episode."""
         self.memory.clear()
         self.last_state = self.state_encoder.encode(raw_state)
         self.last_action = self.act(raw_state)
 
     def get_current_action(self):
-        """
-        Returns the action that should be taken next.
-        """
+        """Return the action to take now."""
         return self.last_action
 
-    def step(self, raw_next_state, reward, done):
+    def step(self, raw_next_state, reward, done, duration=1):
         """
-        Call this after each environment step, providing the outcome of the last action.
+        Call after each environment step.
 
         Args:
-            raw_next_state: state after executing last_action
-            reward: reward received for that transition
-            done: whether the episode ended after this step
+            raw_next_state: next raw state
+            reward: reward received for the transition
+            done: whether episode ended
+            duration: real time (or steps) taken for this transition (default 1)
         """
         next_state_tuple = self.state_encoder.encode(raw_next_state)
 
-        # Store the completed transition
-        self.memory.append((self.last_state, self.last_action, reward))
+        # Store transition with duration
+        self.memory.append((self.last_state, self.last_action, reward, duration))
 
         if done:
-            # Episode finished: update all remaining steps using actual returns
+            # Terminal: update all remaining steps using actual returns
             self._update_from_memory(terminal=True)
             self.memory.clear()
             self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
@@ -113,7 +92,7 @@ class NStepSarsaAgent:
         # Not done: choose next action
         next_action = self.act(raw_next_state)
 
-        # Perform n‑step updates for the oldest step if memory has n steps
+        # Perform n‑step updates if memory has n steps
         self._update_from_memory(terminal=False,
                                  next_state=next_state_tuple,
                                  next_action=next_action)
@@ -123,45 +102,46 @@ class NStepSarsaAgent:
         self.last_action = next_action
 
     # ----------------------------------------------------------------------
-    # Internal n‑step update logic
+    # Internal n‑step SMDP update logic
     # ----------------------------------------------------------------------
 
     def _update_from_memory(self, terminal, next_state=None, next_action=None):
         """
-        Perform n‑step SARSA updates based on the current memory content.
-
-        Args:
-            terminal: True if episode ended (no bootstrap), False otherwise.
-            next_state: the state after the last step in memory (used for bootstrap)
-            next_action: the action taken in next_state (used for bootstrap)
+        Perform n‑step SMDP updates.
+        The discount exponent is the cumulative duration.
         """
         if terminal:
-            # Case 1: Episode ended. Update all steps in memory using actual returns.
+            # Update all steps in memory using actual returns (no bootstrap)
             T = len(self.memory)
             for t in range(T):
-                # Compute return from step t to the end of the episode
+                # Compute return from step t to the end
                 G = 0.0
+                cum_time = 0.0
                 for i in range(T - t):
-                    G += (self.gamma ** i) * self.memory[t + i][2]  # reward
-                state_t, action_t, _ = self.memory[t]
+                    _, _, r, dur = self.memory[t + i]
+                    G += (self.gamma ** cum_time) * r
+                    cum_time += dur
+                state_t, action_t, _, _ = self.memory[t]
                 current_q = self.q_table.get(state_t, action_t)
                 td_error = G - current_q
                 self.q_table.update(state_t, action_t, self.alpha * td_error)
         else:
-            # Case 2: Non‑terminal. Only update the oldest step when memory length == n.
+            # Non‑terminal: update the oldest step when memory has exactly n steps
             if len(self.memory) == self.n:
-                state_0, action_0, _ = self.memory[0]
+                state_0, action_0, _, _ = self.memory[0]
 
-                # Compute the n‑step return: sum of discounted rewards from step 0 to n-1
+                # Compute n‑step return with cumulative durations
                 G = 0.0
+                cum_time = 0.0
                 for i in range(self.n):
-                    G += (self.gamma ** i) * self.memory[i][2]
+                    _, _, r, dur = self.memory[i]
+                    G += (self.gamma ** cum_time) * r
+                    cum_time += dur
 
-                # Add bootstrap term: gamma^n * Q(next_state, next_action)
+                # Add bootstrap term if we have next state/action
                 if next_state is not None and next_action is not None:
-                    G += (self.gamma ** self.n) * self.q_table.get(next_state, next_action)
+                    G += (self.gamma ** cum_time) * self.q_table.get(next_state, next_action)
 
-                # Update Q(s0, a0)
                 current_q = self.q_table.get(state_0, action_0)
                 td_error = G - current_q
                 self.q_table.update(state_0, action_0, self.alpha * td_error)
@@ -174,9 +154,9 @@ class NStepSarsaAgent:
     # ----------------------------------------------------------------------
 
     def save(self, path):
-        """Save the Q‑table to a file using pickle."""
+        """Save Q‑table to file."""
         self.q_table.save(path)
 
     def load(self, path):
-        """Load the Q‑table from a file."""
+        """Load Q‑table from file."""
         self.q_table.load(path)
