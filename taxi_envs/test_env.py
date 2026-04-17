@@ -12,7 +12,7 @@ else:
 	from taxi_envs.env_utils import make_env, sample_dispatch
 
 
-def run_random_agent(episodes: int = 3, max_steps: int = 50, seed: int = 42) -> None:
+def run_random_agent(episodes: int = 3, max_steps: int = 200, seed: int = 42) -> None:
 	rng = np.random.default_rng(seed)
 	env = make_env(max_steps=max_steps, seed=seed)
 	for ep in range(episodes):
