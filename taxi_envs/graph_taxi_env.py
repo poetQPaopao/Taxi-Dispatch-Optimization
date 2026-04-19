@@ -14,6 +14,9 @@ class GraphOrder:
         self.dest = dest
         self.fare = fare
         self.time_generated = time_generated
+    
+    def __repr__(self) -> str:
+        return f"GraphOrder(to:{self.dest}, fare:{self.fare:.1f})"
 
 
 def load_or_create_graph(
@@ -21,12 +24,28 @@ def load_or_create_graph(
     dist: int,
     network_type: str,
     cache_path: str,
+    intersection_tolerance: float,
 ) -> nx.MultiDiGraph:
     if os.path.exists(cache_path):
         return ox.load_graphml(cache_path)
 
-    graph = ox.graph_from_point(center_coords, dist=dist, network_type=network_type)
+    graph = ox.graph_from_point(
+        center_coords,
+        dist=dist,
+        custom_filter=(
+            '["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified"]'
+        ),
+        simplify=True,
+    )
+    graph = _largest_component(graph, strongly=True)
     graph = ox.project_graph(graph)
+    graph = ox.consolidate_intersections(
+        graph,
+        tolerance=intersection_tolerance,
+        rebuild_graph=True,
+        dead_ends=False,
+    )
+    graph = _largest_component(graph, strongly=True)
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     ox.save_graphml(graph, cache_path)
     return graph
@@ -36,18 +55,15 @@ class GraphTaxiDispatchEnv(gym.Env):
     def __init__(
         self,
         config: Dict | None = None,
-        num_taxis: int = 1,
-        max_orders: int = 1,
         max_steps: int = 96,
         center_coords: Tuple[float, float] = (22.7952, 113.5583),
         view_radius: int = 3000,
         network_type: str = "all",
         meters_per_step: float = 50.0,
         cache_path: str | None = None,
+        intersection_tolerance: float = 20.0,
     ):
         super().__init__()
-        _ = num_taxis
-        _ = max_orders
         cfg = config or {}
 
         def _get(name: str, default):
@@ -71,6 +87,7 @@ class GraphTaxiDispatchEnv(gym.Env):
             dist=view_radius,
             network_type=network_type,
             cache_path=cache_path,
+            intersection_tolerance=intersection_tolerance,
         )
         self.node_ids = list(self.graph.nodes)
         if not self.node_ids:
@@ -139,6 +156,8 @@ class GraphTaxiDispatchEnv(gym.Env):
             return None
         except nx.NodeNotFound:
             return None
+
+
 
     def step(self, action: int) -> Tuple[Tuple[int, int], float, bool, bool, Dict]:
         if not isinstance(action, (int, np.integer)):
@@ -281,3 +300,14 @@ class GraphTaxiDispatchEnv(gym.Env):
         steps = int(np.ceil(length_m / self.meters_per_step))
         self._travel_time_cache[key] = steps
         return steps
+    
+
+def _largest_component(graph: nx.MultiDiGraph, strongly: bool) -> nx.MultiDiGraph:
+    if strongly:
+        components = nx.strongly_connected_components(graph)
+    else:
+        components = nx.connected_components(graph.to_undirected())
+    largest = max(components, key=len, default=None)
+    if not largest:
+        return graph
+    return graph.subgraph(largest).copy()

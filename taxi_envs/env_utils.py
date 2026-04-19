@@ -49,8 +49,6 @@ def make_graph_env(
 ) -> GraphTaxiDispatchEnv:
 	env = GraphTaxiDispatchEnv(
 		config=config,
-		num_taxis=num_taxis,
-		max_orders=max_orders,
 		max_steps=max_steps,
 		center_coords=center_coords,
 		view_radius=view_radius,
