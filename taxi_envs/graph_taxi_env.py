@@ -32,20 +32,10 @@ def load_or_create_graph(
     graph = ox.graph_from_point(
         center_coords,
         dist=dist,
-        custom_filter=(
-            '["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified"]'
-        ),
+        custom_filter='["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified"]',
         simplify=True,
     )
-    graph = _largest_component(graph, strongly=True)
-    graph = ox.project_graph(graph)
-    graph = ox.consolidate_intersections(
-        graph,
-        tolerance=intersection_tolerance,
-        rebuild_graph=True,
-        dead_ends=False,
-    )
-    graph = _largest_component(graph, strongly=True)
+    graph = _reduce_graph(graph, intersection_tolerance)
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     ox.save_graphml(graph, cache_path)
     return graph
@@ -56,10 +46,10 @@ class GraphTaxiDispatchEnv(gym.Env):
         self,
         config: Dict | None = None,
         max_steps: int = 96,
-        center_coords: Tuple[float, float] = (22.7952, 113.5583),
+        center_coords: Tuple[float, float] = (22.894, 113.478),
         view_radius: int = 3000,
         network_type: str = "all",
-        meters_per_step: float = 50.0,
+        meters_per_step: float = 1000.0,
         cache_path: str | None = None,
         intersection_tolerance: float = 20.0,
     ):
@@ -84,7 +74,7 @@ class GraphTaxiDispatchEnv(gym.Env):
 
         self.graph = load_or_create_graph(
             center_coords=center_coords,
-            dist=view_radius,
+            dist=view_radius + 500,
             network_type=network_type,
             cache_path=cache_path,
             intersection_tolerance=intersection_tolerance,
@@ -128,6 +118,7 @@ class GraphTaxiDispatchEnv(gym.Env):
         self.total_orders = 0
         self.completed_orders = 0
         self._travel_time_cache: Dict[Tuple[int, int], int | None] = {}
+        print("number of zones (graph nodes) =", self.n_zones)
 
     @property
     def observation_space(self):
@@ -311,3 +302,16 @@ def _largest_component(graph: nx.MultiDiGraph, strongly: bool) -> nx.MultiDiGrap
     if not largest:
         return graph
     return graph.subgraph(largest).copy()
+
+
+def _reduce_graph(graph: nx.MultiDiGraph, intersection_tolerance: float) -> nx.MultiDiGraph:
+    graph = _largest_component(graph, strongly=True)
+    graph = ox.project_graph(graph)
+    graph = ox.consolidate_intersections(
+        graph,
+        tolerance=intersection_tolerance,
+        rebuild_graph=True,
+        dead_ends=False,
+    )
+    graph = _largest_component(graph, strongly=True)
+    return graph

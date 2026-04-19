@@ -41,10 +41,10 @@ def make_graph_env(
 	max_orders: int = 1,
 	max_steps: int = 96,
 	seed: int | None = None,
-	center_coords: tuple[float, float] = (22.7952, 113.5583),
+	center_coords: tuple[float, float] = (22.894, 113.478),
 	view_radius: int = 3000,
 	network_type: str = "all",
-	meters_per_step: float = 50.0,
+	meters_per_step: float = 1000.0,
 	cache_path: str | None = None,
 ) -> GraphTaxiDispatchEnv:
 	env = GraphTaxiDispatchEnv(

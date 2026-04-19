@@ -185,10 +185,11 @@ def main():
                         pygame.draw.circle(map_surface, (255, 255, 255), (px, py), 5)
                         
                         # 绘制路名 (如果有)
-                        name = data.get('name')
+                        name = data.get('name') or data.get('ref')
                         if SHOW_NAMED_NODES and name:
                             # 处理列表类型的名字
-                            if isinstance(name, list): name = name[0]
+                            if isinstance(name, list):
+                                name = name[0]
                             lbl = font.render(str(name), True, (220, 220, 220))
                             map_surface.blit(lbl, (px + 8, py + 3))
 
