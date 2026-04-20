@@ -90,6 +90,10 @@ def run_integration_test(
 
             obs, reward, terminated, truncated, _info = env.step(action)
 
+            # record current demand snapshot
+            _info = dict(_info)
+            _info["pending_counts"] = [len(order_list) for order_list in env.pending_orders]
+
             trained_recorder.add_step(
                 episode=ep,
                 step=step,
@@ -139,6 +143,10 @@ def run_integration_test(
             action = random_agent.act(env)
 
             obs, reward, terminated, truncated, _info = env.step(action)
+            # record current demand snapshot
+            _info = dict(_info)
+            _info["pending_counts"] = [len(order_list) for order_list in env.pending_orders]
+
 
             random_recorder.add_step(
                 episode=ep,
@@ -204,10 +212,10 @@ def run_integration_test(
     run_grid_animation_compare(
         outputs_dir=run_dir,
         episode_idx=60,
-        fps=5,
-        interval_ms=250,
+        fps=3,
+        interval_ms=300,
         save_gif=True,
-        save_mp4=False,
+        save_mp4=False, # 支持视频保存
         show_plot=False,
     )
 

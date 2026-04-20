@@ -23,6 +23,7 @@ class TrajectoryStep:
     truncated: bool
 
     time_elapsed: int
+    pending_counts: list[int]
 
 
 class TrajectoryRecorder:
@@ -62,6 +63,7 @@ class TrajectoryRecorder:
             terminated=bool(terminated),
             truncated=bool(truncated),
             time_elapsed=int(info.get("time_elapsed", 1)),
+            pending_counts=[int(x) for x in info.get("pending_counts", [])]
         )
         self.records.append(asdict(record))
 

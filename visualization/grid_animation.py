@@ -1,10 +1,11 @@
 from __future__ import annotations
-
+import numpy as np
 import pickle
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
+from matplotlib.collections import LineCollection
 
 
 DEFAULT_TRAINED_TRAJ_NAME = "trained_trajectory.pkl"
@@ -59,20 +60,66 @@ def build_path_xy(episode_records, grid_size: int):
 
 def draw_grid(ax, grid_size: int):
     for i in range(grid_size + 1):
-        ax.axhline(i - 0.5, linewidth=0.8)
-        ax.axvline(i - 0.5, linewidth=0.8)
+        ax.axhline(i - 0.5, linewidth=0.6, alpha=0.35)
+        ax.axvline(i - 0.5, linewidth=0.6, alpha=0.35)
 
     ax.set_xlim(-0.5, grid_size - 0.5)
     ax.set_ylim(grid_size - 0.5, -0.5)
     ax.set_xticks(range(grid_size))
     ax.set_yticks(range(grid_size))
     ax.set_aspect("equal")
-    ax.set_xlabel("Column")
-    ax.set_ylabel("Row")
+    # ax.set_xlabel("Column")
+    # ax.set_ylabel("Row")
 
 
 def get_episode_total_reward(episode_records):
     return sum(float(r["reward"]) for r in episode_records)
+
+
+def get_pending_matrix(episode_records, frame_idx: int, grid_size: int):
+    '''
+    Transform the pending orders information into matrix (for heatmap)
+    '''
+    if not episode_records:
+        raise ValueError("episode_records is empty")
+
+    rec_idx = min(frame_idx, len(episode_records) - 1)
+    pending_counts = episode_records[rec_idx].get("pending_counts", [])
+
+    if not pending_counts:
+        return np.zeros((grid_size, grid_size), dtype=float)
+
+    if len(pending_counts) != grid_size * grid_size:
+        raise ValueError(
+            f"pending_counts length {len(pending_counts)} does not match "
+            f"grid size {grid_size}x{grid_size}"
+        )
+
+    return np.array(pending_counts, dtype=float).reshape(grid_size, grid_size)
+
+
+def build_fading_segments(xs, ys, end_idx: int, tail_length: int = 5):
+    """
+    Build recent trajectory segments with fading alpha.
+    Only keep the last `tail_length` steps.
+    """
+    if end_idx <= 0:
+        return [], []
+
+    start_idx = max(0, end_idx - tail_length)
+    seg_points = []
+
+    for i in range(start_idx, end_idx):
+        x0, y0 = xs[i], ys[i]
+        x1, y1 = xs[i + 1], ys[i + 1]
+        seg_points.append([(x0, y0), (x1, y1)])
+
+    if not seg_points:
+        return [], []
+
+    n = len(seg_points)
+    alphas = np.linspace(0.08, 0.85, n)
+    return seg_points, alphas
 
 
 def run_grid_animation_compare(
@@ -118,11 +165,12 @@ def run_grid_animation_compare(
     trained_reward = get_episode_total_reward(trained_episode)
     random_reward = get_episode_total_reward(random_episode)
 
-    n_frames = max(len(tx), len(rx))
+    n_frames = max(len(trained_episode), len(random_episode))
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
     fig.suptitle(
-        f"{outputs_dir.name} | Episode {episode_idx} | "
+        f"{outputs_dir.name} | Episode {episode_idx}\n"
+        f"Demand Heatmap + Taxi Motion | "
         f"Trained reward={trained_reward:.2f} | Random reward={random_reward:.2f}"
     )
 
@@ -133,53 +181,110 @@ def run_grid_animation_compare(
     ax_t.set_title("Trained Agent")
     ax_r.set_title("Random Agent")
 
-    # empty artists
-    line_t, = ax_t.plot([], [], marker="o", linewidth=2, markersize=4, label="trajectory")
-    line_r, = ax_r.plot([], [], marker="o", linewidth=2, markersize=4, label="trajectory")
 
-    start_t = ax_t.scatter([], [], s=120, marker="s", label="start")
-    start_r = ax_r.scatter([], [], s=120, marker="s", label="start")
+    # heatmap background
+    heat_t = ax_t.imshow(
+        get_pending_matrix(trained_episode, 0, grid_size),
+        extent=(-0.5, grid_size - 0.5, grid_size - 0.5, -0.5),
+        interpolation="bilinear",
+        alpha=0.55,
+        cmap="YlOrRd",
+    )
 
-    curr_t = ax_t.scatter([], [], s=140, marker="o", label="current")
-    curr_r = ax_r.scatter([], [], s=140, marker="o", label="current")
+    heat_r = ax_r.imshow(
+        get_pending_matrix(random_episode, 0, grid_size),
+        extent=(-0.5, grid_size - 0.5, grid_size - 0.5, -0.5),
+        interpolation="bilinear",
+        alpha=0.55,
+        cmap="YlOrRd",
+    )
 
-    end_t = ax_t.scatter([], [], s=140, marker="*", label="end")
-    end_r = ax_r.scatter([], [], s=140, marker="*", label="end")
+    # fading tail artists
+    tail_t = LineCollection([], linewidths=3.0)
+    tail_r = LineCollection([], linewidths=3.0)
+    ax_t.add_collection(tail_t)
+    ax_r.add_collection(tail_r)
 
-    text_t = ax_t.text(0.02, 1.02, "", transform=ax_t.transAxes, fontsize=10)
-    text_r = ax_r.text(0.02, 1.02, "", transform=ax_r.transAxes, fontsize=10)
+    # current taxi point
+    curr_t = ax_t.scatter([], [], s=160, marker="o", edgecolors="black", linewidths=0.8, zorder=5)
+    curr_r = ax_r.scatter([], [], s=160, marker="o", edgecolors="black", linewidths=0.8, zorder=5)
 
-    ax_t.legend(loc="upper right")
-    ax_r.legend(loc="upper right")
+    # texts
+    text_t = ax_t.text(0.02, 0.02, "", transform=ax_t.transAxes, fontsize=10)
+    text_r = ax_r.text(0.02, 0.02, "", transform=ax_r.transAxes, fontsize=10)
 
-    # set fixed start/end
-    start_t.set_offsets([[tx[0], ty[0]]])
-    start_r.set_offsets([[rx[0], ry[0]]])
+    # optional colorbars
+    fig.colorbar(heat_t, ax=ax_t, fraction=0.046, pad=0.04)
+    fig.colorbar(heat_r, ax=ax_r, fraction=0.046, pad=0.04)
 
-    end_t.set_offsets([[tx[-1], ty[-1]]])
-    end_r.set_offsets([[rx[-1], ry[-1]]])
+
 
     def update(frame_idx):
-        # trained
-        t_end = min(frame_idx + 1, len(tx))
-        line_t.set_data(tx[:t_end], ty[:t_end])
-        curr_t.set_offsets([[tx[t_end - 1], ty[t_end - 1]]])
-        text_t.set_text(f"step = {t_end - 1}")
+            tail_length = 8
 
-        # random
-        r_end = min(frame_idx + 1, len(rx))
-        line_r.set_data(rx[:r_end], ry[:r_end])
-        curr_r.set_offsets([[rx[r_end - 1], ry[r_end - 1]]])
-        text_r.set_text(f"step = {r_end - 1}")
+            # ===== trained =====
+            t_end = min(frame_idx, len(tx) - 1)
+            t_segments, t_alphas = build_fading_segments(tx, ty, t_end, tail_length=tail_length)
 
-        return (
-            line_t, line_r,
-            start_t, start_r,
-            curr_t, curr_r,
-            end_t, end_r,
-            text_t, text_r,
-        )
+            if t_segments:
+                tail_t.set_segments(t_segments)
+                tail_t.set_alpha(t_alphas)
+            else:
+                tail_t.set_segments([])
 
+            curr_t.set_offsets([[tx[t_end], ty[t_end]]])
+
+            t_rec_idx = min(frame_idx, len(trained_episode) - 1)
+            t_rec = trained_episode[t_rec_idx]
+            t_reward = float(t_rec.get("reward", 0.0))
+            t_matched = bool(t_rec.get("matched", False))
+            t_pending = get_pending_matrix(trained_episode, frame_idx, grid_size)
+            heat_t.set_data(t_pending)
+
+            t_zone = int(t_rec["next_state"][0])
+            t_zone_orders = int(t_rec.get("pending_counts", [0] * (grid_size * grid_size))[t_zone])
+            t_total_orders = int(sum(t_rec.get("pending_counts", [])))
+
+            text_t.set_text(
+                f"step={t_rec_idx} | reward={t_reward:.2f} | matched={t_matched}\n"
+                f"current_zone={t_zone} | orders_here={t_zone_orders} | total_pending={t_total_orders}"
+            )
+
+            # ===== random =====
+            r_end = min(frame_idx, len(rx) - 1)
+            r_segments, r_alphas = build_fading_segments(rx, ry, r_end, tail_length=tail_length)
+
+            if r_segments:
+                tail_r.set_segments(r_segments)
+                tail_r.set_alpha(r_alphas)
+            else:
+                tail_r.set_segments([])
+
+            curr_r.set_offsets([[rx[r_end], ry[r_end]]])
+
+            r_rec_idx = min(frame_idx, len(random_episode) - 1)
+            r_rec = random_episode[r_rec_idx]
+            r_reward = float(r_rec.get("reward", 0.0))
+            r_matched = bool(r_rec.get("matched", False))
+            r_pending = get_pending_matrix(random_episode, frame_idx, grid_size)
+            heat_r.set_data(r_pending)
+
+            r_zone = int(r_rec["next_state"][0])
+            r_zone_orders = int(r_rec.get("pending_counts", [0] * (grid_size * grid_size))[r_zone])
+            r_total_orders = int(sum(r_rec.get("pending_counts", [])))
+
+            text_r.set_text(
+                f"step={r_rec_idx} | reward={r_reward:.2f} | matched={r_matched}\n"
+                f"current_zone={r_zone} | orders_here={r_zone_orders} | total_pending={r_total_orders}"
+            )
+
+            return (
+                heat_t, heat_r,
+                tail_t, tail_r,
+                curr_t, curr_r,
+                text_t, text_r,
+            )
+    
     anim = FuncAnimation(
         fig,
         update,
@@ -204,3 +309,5 @@ def run_grid_animation_compare(
         plt.show()
     else:
         plt.close(fig)
+
+    

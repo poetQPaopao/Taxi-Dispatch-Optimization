@@ -121,7 +121,7 @@ def plot_grid_compare(
         plt.savefig(save_path, dpi=150)
         print(f"saved figure to: {save_path}")
 
-    plt.show()
+    # plt.show()
     plt.close()
 
 
