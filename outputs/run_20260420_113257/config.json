@@ -1,0 +1,16 @@
+{
+  "episodes": 100,
+  "max_steps": 200,
+  "seed": 42,
+  "n": 3,
+  "alpha": 0.1,
+  "gamma": 0.95,
+  "epsilon": 0.2,
+  "save_path": "nstep_agent.pkl",
+  "load_path": null,
+  "env_type": "graph",
+  "make_static_compare": false,
+  "make_grid_animation": false,
+  "make_graph_animation": true,
+  "vis_episode_idx": 99
+}

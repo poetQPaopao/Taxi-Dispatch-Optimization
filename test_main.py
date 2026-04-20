@@ -5,9 +5,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 import pickle
-from taxi_envs.env_utils import make_env
+from taxi_envs.env_utils import make_env, make_graph_env
 from utils import make_run_dir, save_pickle, save_reward_curve, save_json
 import json
+
 
 ROOT_DIR = os.path.dirname(__file__)
 ALGO_DIR = os.path.join(ROOT_DIR, "Algorithm")
@@ -17,7 +18,11 @@ if ALGO_DIR not in sys.path:
 from Algorithm.nstep_sarsa import NStepSarsaAgent
 from Algorithm.state_encoder import StateEncoder
 
+from visualization.grid_replay import run_grid_compare
+from visualization.grid_animation import run_grid_animation_compare
+from visualization.graph_animation import run_graph_animation
 from visualization.trajectory import TrajectoryRecorder, save_trajectory
+
 from baseline import RandomDispatchAgent
 from pathlib import Path
 
@@ -31,6 +36,11 @@ def run_integration_test(
     epsilon=0.2,
     save_path=None,
     load_path=None,
+    env_type="grid",
+    make_static_compare=True,
+    make_grid_animation=True,
+    make_graph_animation=True,
+    vis_episode_idx=100,
 ):
     config = {
         "episodes": episodes,
@@ -42,12 +52,31 @@ def run_integration_test(
         "epsilon": epsilon,
         "save_path": save_path,
         "load_path": load_path,
+        "env_type": env_type,
+        "make_static_compare": make_static_compare,
+        "make_grid_animation": make_grid_animation,
+        "make_graph_animation": make_graph_animation,
+        "vis_episode_idx": vis_episode_idx,
     }
 
     run_dir = make_run_dir("outputs")
     print(f"run directory: {run_dir}")
 
-    env = make_env(max_steps=max_steps, seed=seed)
+    # env = make_env(max_steps=max_steps, seed=seed)
+    if env_type == "grid":
+        env = make_env(max_steps=max_steps, seed=seed)
+    elif env_type == "graph":
+        env = make_graph_env(
+            max_steps=max_steps,
+            seed=seed,
+            center_coords=(22.894, 113.478),
+            view_radius=3000,
+            cache_path="cache/taxi_graph.graphml",
+        )
+    else:
+        raise ValueError(f"Unknown env_type: {env_type}")
+
+
     num_zones = env.n_zones
 
     def _as_raw_state(obs):
@@ -201,29 +230,59 @@ def run_integration_test(
     print(f"trained reward curve saved to: {run_dir / 'trained_reward_curve.png'}")
     print(f"random reward curve saved to: {run_dir / 'random_reward_curve.png'}")
 
-    from visualization.grid_replay import run_grid_compare
-    from visualization.grid_animation import run_grid_animation_compare
+    
+    # ---------------------------
+    # visualization
+    # ---------------------------
+    if env_type == "grid":
+        from visualization.grid_replay import run_grid_compare
+        from visualization.grid_animation import run_grid_animation_compare
 
-    run_grid_compare(
-        outputs_dir=run_dir,
-        episode_idx=60
-    )
+        if make_static_compare:
+            run_grid_compare(
+                outputs_dir=run_dir,
+                episode_idx=vis_episode_idx,
+            )
 
-    run_grid_animation_compare(
-        outputs_dir=run_dir,
-        episode_idx=60,
-        fps=3,
-        interval_ms=300,
-        save_gif=True,
-        save_mp4=False, # 支持视频保存
-        show_plot=False,
-    )
+        if make_grid_animation:
+            run_grid_animation_compare(
+                outputs_dir=run_dir,
+                episode_idx=vis_episode_idx,
+                fps=3,
+                interval_ms=300,
+                save_gif=True,
+                save_mp4=False,
+                show_plot=False,
+            )
 
+    elif env_type == "graph":
+        if make_graph_animation:
+            run_graph_animation(
+                outputs_dir=run_dir,
+                episode_idx=vis_episode_idx,
+                mode="trained",
+                graph_path="cache/taxi_graph.graphml",
+                fps=6,
+            )
+
+
+            run_graph_animation(
+                outputs_dir=run_dir,
+                episode_idx=vis_episode_idx,
+                mode="random",
+                graph_path="cache/taxi_graph.graphml",
+                fps=6,
+            )
 
 if __name__ == "__main__":
     run_integration_test(
-        episodes=100,
+        episodes=10000,
         max_steps=200,
         seed=42,
         save_path="nstep_agent.pkl",
+        env_type="graph",
+        vis_episode_idx=99,
+        make_static_compare=False,
+        make_grid_animation=False,
+        make_graph_animation=True,
     )
