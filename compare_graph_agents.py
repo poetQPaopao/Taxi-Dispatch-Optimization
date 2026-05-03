@@ -12,8 +12,8 @@ ALGO_DIR = os.path.join(ROOT_DIR, "Algorithm")
 if ALGO_DIR not in sys.path:
     sys.path.insert(0, ALGO_DIR)
 
-from nstep_sarsa import NStepSarsaAgent
-from state_encoder import StateEncoder
+from Algorithm.nstep_sarsa import NStepSarsaAgent
+from Algorithm.state_encoder import StateEncoder
 
 
 @dataclass
@@ -63,7 +63,7 @@ def run_sarsa_agent(
     seed: int,
     use_smdp: bool,
     env_kwargs: dict,
-    n: int = 3,
+    n: int = 1,
     alpha: float = 0.1,
     gamma: float = 0.95,
     epsilon: float = 0.1,
@@ -147,7 +147,7 @@ def plot_learning_curves(results: list[RunResult], window: int = 5) -> None:
 
 
 def run_compare(
-    episodes: int = 10000,
+    episodes: int = 30000,
     max_steps: int = 96,
     seed: int = 42,
 ) -> None:

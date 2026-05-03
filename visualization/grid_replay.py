@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 DEFAULT_TRAINED_TRAJ_NAME = "trained_trajectory.pkl"
 DEFAULT_RANDOM_TRAJ_NAME = "random_trajectory.pkl"
-DEFAULT_SAVE_NAME = "grid_compare_episode0.png"
+DEFAULT_SAVE_NAME = "grid_compare_episode.png"
 
 
 def load_trajectory(path: str | Path):

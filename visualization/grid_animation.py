@@ -310,4 +310,14 @@ def run_grid_animation_compare(
     else:
         plt.close(fig)
 
-    
+
+if __name__ == "__main__":
+    run_grid_animation_compare(
+    outputs_dir="outputs/run_grid_n_20260421_195346/run_000",
+    episode_idx=29286,
+    fps=3,
+    interval_ms=100,
+    save_gif=True,
+    save_mp4=False,
+    show_plot=False,
+)

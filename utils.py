@@ -5,9 +5,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 
-def make_run_dir(root="outputs"):
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = Path(root) / f"run_{ts}"
+
+def make_run_dir(root="outputs", name="run") -> Path:
+    """Create a run directory. No timestamp — uses name directly.
+    If directory exists, appends _1, _2, etc."""
+    run_dir = Path(root) / name
+    if run_dir.exists():
+        i = 1
+        while Path(str(run_dir) + f"_{i}").exists():
+            i += 1
+        run_dir = Path(str(run_dir) + f"_{i}")
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
 
@@ -51,6 +58,7 @@ def save_reward_curve(reward_history, path):
     plt.tight_layout()
     plt.savefig(path)
     plt.close()
+
 
 def save_json(obj, path):
     path = Path(path)

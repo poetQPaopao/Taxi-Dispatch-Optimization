@@ -61,6 +61,8 @@ class TaxiDispatchEnv(gym.Env):
         self.pending_orders: List[List[Order]] = [[] for _ in range(self.n_zones)]
         self.total_orders = 0
         self.completed_orders = 0
+        self.empty_time = 0     # [metrics] cumulative empty driving time for empty_drive_ratio
+        self.occupied_time = 0  # [metrics] cumulative occupied driving time for empty_drive_ratio
 
     @property
     def observation_space(self):
@@ -80,6 +82,8 @@ class TaxiDispatchEnv(gym.Env):
         self.current_zone = int(self.rng.integers(0, self.n_zones))
         self.total_orders = 0
         self.completed_orders = 0
+        self.empty_time = 0     # [metrics] reset cumulative counters
+        self.occupied_time = 0  # [metrics]
         self._generate_orders_for_time(self.current_time)
         
         return self._get_state(), {}
@@ -99,6 +103,8 @@ class TaxiDispatchEnv(gym.Env):
             move_reward = 0.0
         else:
             move_reward = -self.cost_empty * travel_time
+
+        self.empty_time += travel_time  # [metrics] track empty cruising time
 
         next_time = self.current_time + travel_time
         time_elapsed = travel_time
@@ -133,6 +139,7 @@ class TaxiDispatchEnv(gym.Env):
                 "time_elapsed": remaining,
             }
 
+        self.occupied_time += trip_time  # [metrics] track occupied driving time
         time_elapsed += trip_time
 
         trip_reward = matched_order.fare - self.cost_occupied * trip_time
@@ -143,8 +150,12 @@ class TaxiDispatchEnv(gym.Env):
         # Normal arrival: generate orders for the new time step.
         self.current_time = arrival_time
         self._generate_orders_for_time(self.current_time)
-        
-        return self._get_state(), total_reward, False, False, {"matched": True, "time_elapsed": time_elapsed}
+
+        return self._get_state(), total_reward, False, False, {
+            "matched": True,
+            "time_elapsed": time_elapsed,
+            "fare": matched_order.fare,  # [metrics] for mean_trip_fare computation
+        }
     
     def render(self, mode: str = "human") -> None:
         if mode != "human":

@@ -1,0 +1,215 @@
+% ==============================================================================
+% Experiments Section — Taxi Dispatch RL
+% To be included in the main report via \input{experiments}
+% ==============================================================================
+
+\section{Experiments}
+
+\subsection{Setup}
+
+We evaluate the RL agent on both the simplified grid world and the real-world road-network graph environment described in the previous section. This tests whether learning transfers from a controlled synthetic setting to a realistic spatial topology. The n-step SARSA agent uses fixed hyperparameters ($\alpha{=}0.1$, $\gamma{=}0.95$, $\varepsilon$ decay ${=}{\times}0.995$/episode to $\varepsilon_{\min}{=}0.01$) with SMDP-aware discounting. The random baseline uniformly samples a target zone at each decision step.
+
+\subsection{Experiment Design}
+
+Four experiments probe three dimensions. All use seed 42; evaluation runs at $\varepsilon{=}0$ (greedy). Metrics are defined in Table~\ref{tab:metrics}.
+
+\begin{table}[ht]
+\centering
+\caption{Experiment matrix.}
+\label{tab:exp-summary}
+\begin{tabular}{clllcc}
+\toprule
+\textbf{Exp} & \textbf{Env} & \textbf{Variable} & \textbf{Values} & \textbf{Train Ep.} & \textbf{Eval Ep.} \\
+\midrule
+A & Grid  & Agent type          & RL vs.\ Random                        & 10,000 & 200 \\
+B & Graph & Agent type          & RL vs.\ Random                        & 10,000 & 200 \\
+C & Grid  & Lookahead $n$       & $n \in \{1, 3, 5\}$                  & 5,000  & 200 \\
+D & Graph & Temporal granularity & m/s $\in \{300, 500, 800, 1000\}$     & 5,000  & 200 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Experiment A/B} test whether RL learns beyond random on both environments. \textbf{Experiment C} examines the bias-variance trade-off in multi-step returns: larger $n$ reduces bootstrapping bias but amplifies stochastic-reward variance. \textbf{Experiment D} tests temporal granularity: smaller \texttt{meters\_per\_step} yields more steps per kilometer (finer control but longer travel, fewer decision points per episode).
+
+\subsection{Evaluation Metrics}
+\label{sec:metrics}
+
+\begin{table}[ht]
+\centering
+\caption{Evaluation metrics.}
+\label{tab:metrics}
+\begin{tabular}{lll}
+\toprule
+\textbf{Category} & \textbf{Metric} & \textbf{Definition} \\
+\midrule
+\multirow{5}{*}{Core}
+& Total Reward      & $\sum_t r_t$ per episode \\
+& Profit per Time   & $\sum r_t \;/\; \sum d_t$ \\
+& Completed Orders  & Orders served per episode \\
+& Completion Rate   & completed / total\_orders\_generated \\
+& Empty Drive Ratio & $T_{\text{empty}} / (T_{\text{empty}} + T_{\text{occupied}})$ \\
+\midrule
+\multirow{3}{*}{Behavioral}
+& Reposition Rate    & $P(a_t \neq \text{zone}_t)$ \\
+& Stay-and-Wait Rate & $P(a_t = \text{zone}_t)$ \\
+& Mean Trip Fare     & $\mathbb{E}[\text{fare} \mid \text{completed}]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Learning progress is measured via the learning curve and \textbf{learning gain}: $\bar{R}_{\text{second half}} - \bar{R}_{\text{first half}}$.
+
+\subsection{Results}
+
+\subsubsection{Experiment A: Grid — RL vs.\ Random}
+
+\begin{table}[ht]
+\centering
+\caption{Experiment A: Grid, $n{=}1$, 10k episodes.}
+\label{tab:res-a}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{RL} & \textbf{Random} & $\bm{\Delta}$ \\
+\midrule
+Total Reward          & $+72.21$ & $-30.68$ & $+102.89$ \\
+Profit per Time       & $+0.362$ & $-0.154$ & $+0.516$ \\
+Completed Orders      & $26.60$  & $17.19$  & $+9.41$ \\
+Completion Rate       & $2.22\%$ & $2.20\%$ & $+0.02\%$ \\
+Empty Drive Ratio     & $58.7\%$ & $72.7\%$ & $-14.0\%$ \\
+Reposition Rate       & $78.8\%$ & $96.0\%$ & $-17.3\%$ \\
+Stay-and-Wait Rate    & $21.2\%$ & $4.0\%$  & $+17.3\%$ \\
+Mean Trip Fare        & $8.11$   & $8.20$   & $-0.09$ \\
+\midrule
+Best Episode Reward   & \multicolumn{3}{c}{158.0 (ep.\ \#7404)} \\
+Learning Gain         & \multicolumn{3}{c}{$+25.76$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Analysis.} RL turns a loss-making random policy into a profitable one ($\Delta{=}{+}102.9$). Two behavioral shifts are decisive: (i)~stay-and-wait increases $5{\times}$ (21.2\% vs.\ 4.0\%) — the agent learns to remain in promising zones rather than blindly reposition; (ii)~empty drive drops 14 pp (58.7\% vs.\ 72.7\%), directly improving profitability since empty cruising costs 1.0/step vs.\ 0.5/step occupied. Completion rate is nearly identical (2.22\% vs.\ 2.20\%) because the single-taxi ceiling (${\sim}1$ order served per ${\sim}12.5$ generated) binds both agents; RL's advantage comes from \emph{which} orders it serves, not \emph{how many}.
+
+\subsubsection{Experiment B: Graph — RL vs.\ Random}
+
+\begin{table}[ht]
+\centering
+\caption{Experiment B: Graph, $n{=}1$, m/s{=}1000, 10k episodes.}
+\label{tab:res-b}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{RL} & \textbf{Random} & $\bm{\Delta}$ \\
+\midrule
+Total Reward          & $+41.46$ & $-23.49$ & $+64.95$ \\
+Profit per Time       & $+0.208$ & $-0.118$ & $+0.326$ \\
+Completed Orders      & $25.80$  & $18.70$  & $+7.10$ \\
+Completion Rate       & $0.96\%$ & $0.95\%$ & $+0.01\%$ \\
+Empty Drive Ratio     & $64.1\%$ & $72.5\%$ & $-8.4\%$ \\
+Reposition Rate       & $92.7\%$ & $98.3\%$ & $-5.5\%$ \\
+Stay-and-Wait Rate    & $7.3\%$  & $1.7\%$  & $+5.5\%$ \\
+Mean Trip Fare        & $7.80$   & $7.96$   & $-0.16$ \\
+\midrule
+Best Episode Reward   & \multicolumn{3}{c}{150.0 (ep.\ \#9226)} \\
+Learning Gain         & \multicolumn{3}{c}{$+40.89$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Analysis.} RL again outperforms random ($\Delta{=}{+}65.0$), but absolute reward is lower than on grid (41.5 vs.\ 72.2), consistent with the graph's larger state space (58 vs.\ 25 zones) and irregular topology. Stay-and-wait is lower (7.3\% vs.\ 21.2\%) — the road network's hub-and-spoke structure makes some zones poor waiting spots regardless of demand, so the agent repositions more. Learning gain is larger ($+40.89$ vs.\ $+25.76$), suggesting the graph presents a harder initial problem but richer structure to exploit once learning takes hold.
+
+\subsubsection{Experiment C: n-step Sweep (Grid)}
+
+\begin{table}[ht]
+\centering
+\caption{Experiment C: n-step sweep on Grid (5k episodes each). Random baseline: ${-}30.8$.}
+\label{tab:res-c}
+\begin{tabular}{cccccccc}
+\toprule
+$\bm{n}$ & \textbf{Reward} & \textbf{Profit/Time} & \textbf{Compl.} & \textbf{Empty Drv.} & \textbf{Repos.} & \textbf{Stay\&Wait} & \textbf{Trip Fare} \\
+\midrule
+1 & $\mathbf{58.74}$ & $\mathbf{0.295}$ & 25.4 & $60.5\%$ & $80.8\%$ & $19.2\%$ & 8.11 \\
+3 & $39.12$ & $0.196$ & 24.0 & $63.2\%$ & $86.7\%$ & $13.3\%$ & 8.08 \\
+5 & $32.59$ & $0.164$ & 23.3 & $64.0\%$ & $87.5\%$ & $12.5\%$ & 8.10 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Analysis — contrary to hypothesis.} We expected moderate $n$ (3--5) to outperform $n{=}1$ via better credit assignment across temporally separated actions and rewards. Instead, \textbf{$n{=}1$ is best by a wide margin} ($+58.7$ vs.\ $+39.1$, a 50\% gap). Three factors explain this:
+
+\begin{enumerate}[leftmargin=*,nosep]
+    \item \textbf{Multi-step returns amplify noise.} The $n$-step return sums $n$ individually noisy Poisson-driven rewards; the TD bootstrap in $n{=}1$ is a lower-variance target.
+    \item \textbf{Delayed credit assignment is less critical than expected.} With uniform demand (no spatial hotspots), the dominant learning signal is \emph{whether a match occurred at the arrival zone}, not multi-step reward chains.
+    \item \textbf{Larger $n$ shifts policy toward excessive movement.} Reposition rate rises from 80.8\% ($n{=}1$) to 87.5\% ($n{=}5$), suggesting higher-$n$ updates over-correct for occasional unlucky stays.
+\end{enumerate}
+
+This is consistent with the bias-variance trade-off in TD learning: in high-noise environments, shorter bootstraps often yield more stable learning (Sutton \& Barto, 2018, Ch.~7).
+
+\subsubsection{Experiment D: \texttt{meters\_per\_step} Sweep (Graph)}
+
+\begin{table}[ht]
+\centering
+\caption{Experiment D: m/s sweep on Graph (5k episodes each, $n{=}1$).}
+\label{tab:res-d}
+\begin{tabular}{cccccccc}
+\toprule
+\textbf{m/s} & \textbf{Reward} & \textbf{Profit/Time} & \textbf{Compl.} & \textbf{Empty Drv.} & \textbf{Repos.} & \textbf{Stay\&Wait} & \textbf{Fare} \\
+\midrule
+300  & $-71.28$ & $-0.361$ & 7.4  & $69.4\%$ & $94.8\%$ & $5.2\%$ & 13.56 \\
+500  & $-39.43$ & $-0.199$ & 12.5 & $67.7\%$ & $94.3\%$ & $5.7\%$ & 10.27 \\
+800  & $-0.49$  & $-0.003$ & 19.5 & $67.0\%$ & $94.0\%$ & $6.0\%$ & 8.42  \\
+1000 & $\mathbf{22.51}$  & $\mathbf{0.113}$  & $\mathbf{23.7}$ & $66.6\%$ & $94.0\%$ & $6.0\%$ & 7.83  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Analysis — contrary to hypothesis.} We hypothesized that intermediate granularity (500--800\,m/step) would best balance control precision against learning complexity. The data show \textbf{monotonic improvement with coarser granularity}; only m/s{=}1000 is profitable. The mechanism is straightforward: at m/s{=}300, a 1\,km trip takes $\lceil 1000/300\rceil{=}4$ steps vs.\ 1 step at m/s{=}1000. Since episode length is fixed at 96, finer granularity drastically reduces decision points per episode (${\sim}17$ vs.\ ${\sim}65$). Fewer steps means fewer SARSA updates; over 5,000 episodes this compounds into a ${\sim}3.8{\times}$ gap in total gradient steps. Higher per-trip fares at fine granularity (13.56 vs.\ 7.83) cannot compensate for the 3.2$\times$ throughput drop (7.4 vs.\ 23.7 orders). The profit-per-time metric confirms m/s{=}1000 is more efficient \emph{per unit of simulated time}, not just per episode.
+
+\textbf{Design implication:} \texttt{meters\_per\_step} must match the intended real-world decision interval. For $\sim$10-minute dispatch cycles, it should reflect typical travel distance in 10 minutes ($\sim$1--2\,km).
+
+\subsubsection{Cross-Experiment Analysis}
+
+\begin{table}[ht]
+\centering
+\caption{Cross-experiment comparison (best RL run per experiment).}
+\label{tab:cross}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Exp} & \textbf{Env} & \textbf{Reward} & \textbf{Profit/Time} & \textbf{Empty Drv.} & \textbf{Stay\&Wait} \\
+\midrule
+A & Grid  & $+72.2$ & $+0.362$ & $58.7\%$ & $21.2\%$ \\
+B & Graph & $+41.5$ & $+0.208$ & $64.1\%$ & $7.3\%$  \\
+C & Grid  & $+58.7$ & $+0.295$ & $60.5\%$ & $19.2\%$ \\
+D & Graph & $+22.5$ & $+0.113$ & $66.6\%$ & $6.0\%$  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three consistent patterns: (1)~\textbf{RL always beats random} by $+45$ to $+103$ reward; (2)~\textbf{Grid $\succ$ Graph} (1.4--2.6$\times$ higher reward, reflecting smaller state space and regular topology); (3)~\textbf{Stay-and-wait is the hallmark of learning} — random agents stay ${\sim}2$--4\%, trained agents stay 6--21\%, and stay-and-wait rate correlates with reward ($r{\approx}0.92$ across experiments). The agent that learns \emph{selectivity} about when to move outperforms one that moves indiscriminately.
+
+\subsection{Discussion}
+
+\subsubsection{Hypothesis Outcomes}
+
+\begin{table}[ht]
+\centering
+\caption{Hypothesis outcomes summary.}
+\label{tab:hypotheses}
+\begin{tabular}{llp{5cm}}
+\toprule
+\textbf{Exp} & \textbf{Hypothesis} & \textbf{Outcome} \\
+\midrule
+A & RL $\gg$ Random & \textbf{Confirmed.} $\Delta{=}{+}102.9$. \\
+B & RL $>$ Random, smaller gap & \textbf{Confirmed.} $\Delta{=}{+}65.0 < 102.9$. \\
+C & $n{=}3$ or $5 > n{=}1$ & \textbf{Rejected.} $n{=}1$ wins by $+19.6$ over $n{=}3$. \\
+D & m/s 500--800 best & \textbf{Rejected.} m/s{=}1000 monotonically best. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The two rejected hypotheses share a unifying theme: \textbf{simpler learning beats more complex learning in high-noise settings}. Shorter bootstraps have lower variance; coarser time resolution enables more updates per episode. Both caution against adding complexity (longer lookahead, finer resolution) without first verifying that the environment's signal-to-noise ratio can support it.
+
+\subsubsection{Limitations and Future Work}
+
+\textbf{Limitations.} (1)~Single-taxi — real dispatch involves multi-agent coordination. (2)~Uniform Poisson demand — real data exhibits strong spatiotemporal correlations. (3)~Tabular Q-learning — scaling to thousands of zones requires function approximation. (4)~Minimal observation — adding neighboring-zone demand features could improve reactivity. (5)~No time-of-day dynamics — real policies must handle diurnal cycles.
+
+\textbf{Future work.} Three promising directions: (i)~replace synthetic demand with real trip records (e.g., NYC TLC); (ii)~extend to $K{>}1$ taxis; (iii)~replace the tabular Q-table with a neural network ingesting grid/graph demand representations, enabling the agent to react to real-time fluctuations.
+
+\textbf{Practical takeaways.} (1)~Even simple (zone, time) observations suffice for profitable repositioning — historical statistics embodied in the Q-table outweigh real-time order visibility. (2)~Strategic waiting is high-impact and underutilized: the trained agent stays 21\% of the time, vs.\ 4\% for random. (3)~Multi-step returns ($n{>}1$) should not be assumed beneficial; practitioners should benchmark $n{=}1$ first. (4)~Temporal granularity (\texttt{meters\_per\_step}) is a critical design parameter; getting it wrong by $2$--$3{\times}$ can flip a policy from profitable to loss-making.

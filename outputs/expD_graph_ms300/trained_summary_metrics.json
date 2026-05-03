@@ -1,0 +1,17 @@
+{
+  "num_episodes": 5000,
+  "mean_total_reward": -71.2757,
+  "mean_profit_per_time": -0.36071970320844426,
+  "mean_completed_orders": 7.3558,
+  "mean_completion_rate": 0.009147338327234522,
+  "mean_empty_drive_ratio": 0.6938350105638469,
+  "mean_reposition_rate": 0.948159114579357,
+  "mean_stay_and_wait_rate": 0.05184088542064299,
+  "mean_trip_fare": 13.560078631368631,
+  "best_episode_by_reward": 1437,
+  "best_reward": 52.0,
+  "best_profit_per_time": 0.26,
+  "learning_gain_reward": 18.500200000000007,
+  "learning_gain_completion_rate": 0.0001819496480729918,
+  "learning_gain_profit_per_time": 0.09394232560475807
+}

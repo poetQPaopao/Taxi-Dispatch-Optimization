@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+outputs/*/checkpoints/
+outputs/*/*.pkl
+cache/*.json

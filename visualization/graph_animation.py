@@ -515,16 +515,18 @@ def run_graph_animation(
     coarse_graph_path = Path(coarse_graph_path)
 
     trained_records = load_trajectory(outputs_dir / trained_traj_name)
-    random_records = load_trajectory(outputs_dir / random_traj_name)
+    
 
     trained_episode = filter_episode(trained_records, episode_idx)
-    random_episode = filter_episode(random_records, episode_idx)
+    
 
     if mode == "trained":
         episode_records = trained_episode
         taxi_color = (37, 99, 235)
         title_text = "Trained Agent"
     else:
+        random_records = load_trajectory(outputs_dir / random_traj_name)
+        random_episode = filter_episode(random_records, episode_idx)
         episode_records = random_episode
         taxi_color = (249, 115, 22)
         title_text = "Random Agent"
@@ -740,8 +742,8 @@ def run_graph_animation(
 
 if __name__ == "__main__":
     run_graph_animation(
-        outputs_dir="outputs/run_20260420_113532",
-        episode_idx=99,
+        outputs_dir="outputs/run_graph_m_per_step_sweep_20260421_154836/run_002",
+        episode_idx=100,
         mode="trained",
         graph_path="cache/taxi_graph_full.graphml",
         coarse_graph_path="cache/taxi_graph.graphml",

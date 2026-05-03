@@ -27,10 +27,10 @@ from baseline import RandomDispatchAgent
 from pathlib import Path
 
 def run_integration_test(
-    episodes=3000,
+    episodes=30000,
     max_steps=200,
     seed=42,
-    n=3,
+    n=1,
     alpha=0.1,
     gamma=0.95,
     epsilon=0.2,
@@ -263,6 +263,7 @@ def run_integration_test(
                 mode="trained",
                 graph_path="cache/taxi_graph.graphml",
                 fps=6,
+                record=True
             )
 
 
@@ -281,8 +282,8 @@ if __name__ == "__main__":
         seed=42,
         save_path="nstep_agent.pkl",
         env_type="graph",
-        vis_episode_idx=99,
+        vis_episode_idx=29999,
         make_static_compare=False,
-        make_grid_animation=False,
+        make_grid_animation=True,
         make_graph_animation=True,
     )

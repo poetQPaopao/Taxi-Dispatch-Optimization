@@ -25,15 +25,15 @@ class TrajectoryStep:
     time_elapsed: int
     pending_counts: list[int]
 
+    completed_orders: int
+    total_orders: int
+    empty_time: int
+    occupied_time: int
+    trip_fare: float
+
 
 class TrajectoryRecorder:
-    """
-    Independent trajectory recorder.
-
-    - Does NOT depend on internal env implementation details
-    - Does NOT modify agent/env
-    - Only records what the outer runner/test loop already sees
-    """
+    """Independent trajectory recorder. Only records what the outer runner loop sees."""
 
     def __init__(self) -> None:
         self.records: list[dict[str, Any]] = []
@@ -63,7 +63,12 @@ class TrajectoryRecorder:
             terminated=bool(terminated),
             truncated=bool(truncated),
             time_elapsed=int(info.get("time_elapsed", 1)),
-            pending_counts=[int(x) for x in info.get("pending_counts", [])]
+            pending_counts=[int(x) for x in info.get("pending_counts", [])],
+            completed_orders=int(info.get("completed_orders", -1)),
+            total_orders=int(info.get("total_orders", -1)),
+            empty_time=int(info.get("empty_time", -1)),
+            occupied_time=int(info.get("occupied_time", -1)),
+            trip_fare=float(info.get("fare", 0.0)),
         )
         self.records.append(asdict(record))
 

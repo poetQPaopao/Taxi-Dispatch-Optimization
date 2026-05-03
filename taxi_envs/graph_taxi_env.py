@@ -117,7 +117,13 @@ class GraphTaxiDispatchEnv(gym.Env):
         self.pending_orders: List[List[GraphOrder]] = [[] for _ in range(self.n_zones)]
         self.total_orders = 0
         self.completed_orders = 0
+        self.empty_time = 0     # [metrics] cumulative empty driving time for empty_drive_ratio
+        self.occupied_time = 0  # [metrics] cumulative occupied driving time for empty_drive_ratio
         self._travel_time_cache: Dict[Tuple[int, int], int | None] = {}
+
+        # [perf] precompute all-pairs shortest path matrix once, then O(1) lookup
+        if self.travel_time_matrix is None:
+            self._precompute_travel_time_matrix()
         print("number of zones (graph nodes) =", self.n_zones)
 
     @property
@@ -137,6 +143,8 @@ class GraphTaxiDispatchEnv(gym.Env):
         self.current_zone = int(self.rng.integers(0, self.n_zones))
         self.total_orders = 0
         self.completed_orders = 0
+        self.empty_time = 0     # [metrics] reset cumulative counters
+        self.occupied_time = 0  # [metrics]
         self._generate_orders_for_time(self.current_time)
         return self._get_state(), {}
 
@@ -167,6 +175,8 @@ class GraphTaxiDispatchEnv(gym.Env):
             move_reward = 0.0
         else:
             move_reward = -self.cost_empty * travel_time
+
+        self.empty_time += travel_time  # [metrics] track empty cruising time
 
         next_time = self.current_time + travel_time
         time_elapsed = travel_time
@@ -207,6 +217,7 @@ class GraphTaxiDispatchEnv(gym.Env):
                 "time_elapsed": remaining,
             }
 
+        self.occupied_time += trip_time  # [metrics] track occupied driving time
         time_elapsed += trip_time
         trip_reward = matched_order.fare - self.cost_occupied * trip_time
         self.completed_orders += 1
@@ -218,6 +229,7 @@ class GraphTaxiDispatchEnv(gym.Env):
         return self._get_state(), total_reward, False, False, {
             "matched": True,
             "time_elapsed": time_elapsed,
+            "fare": matched_order.fare,  # [metrics] for mean_trip_fare computation
         }
 
     def render(self):
@@ -270,27 +282,25 @@ class GraphTaxiDispatchEnv(gym.Env):
             return None
         return orders[int(self.rng.integers(0, len(orders)))]
 
+    def _precompute_travel_time_matrix(self) -> None:
+        """[perf] One-time Dijkstra over all node pairs; _travel_time then becomes O(1) matrix lookup."""
+        n = len(self.node_ids)
+        print(f"Precomputing travel time matrix for {n} nodes ({n*n} pairs)...")
+        matrix = np.full((n, n), -1, dtype=int)
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    matrix[i, j] = 0
+                    continue
+                length_m = self._shortest_path_length(self.node_ids[i], self.node_ids[j])
+                if length_m is not None:
+                    matrix[i, j] = int(np.ceil(length_m / self.meters_per_step))
+        self.travel_time_matrix = matrix
+        print("Travel time matrix precomputed.")
+
     def _travel_time(self, origin_zone: int, dest_zone: int) -> int | None:
-        if self.travel_time_matrix is not None:
-            return int(self.travel_time_matrix[origin_zone, dest_zone])
-
-        key = (origin_zone, dest_zone)
-        if key in self._travel_time_cache:
-            return self._travel_time_cache[key]
-
-        if origin_zone >= len(self.node_ids) or dest_zone >= len(self.node_ids):
-            self._travel_time_cache[key] = None
-            return None
-
-        source_node = self.node_ids[origin_zone]
-        target_node = self.node_ids[dest_zone]
-        length_m = self._shortest_path_length(source_node, target_node)
-        if length_m is None:
-            self._travel_time_cache[key] = None
-            return None
-        steps = int(np.ceil(length_m / self.meters_per_step))
-        self._travel_time_cache[key] = steps
-        return steps
+        val = int(self.travel_time_matrix[origin_zone, dest_zone])
+        return None if val < 0 else val
     
 
 def _largest_component(graph: nx.MultiDiGraph, strongly: bool) -> nx.MultiDiGraph:
